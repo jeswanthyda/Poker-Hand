@@ -1,0 +1,284 @@
+---
+title: "Poker"
+author: "Jeswanth Yadagani, Kavita Anant, Prutha Parmar"
+date: "01/12/2019"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+### Load Data
+```{r Load_Data}
+library(ModelMetrics)
+train_cols <- c('S1','C1','S2','C2','S3','C3','S4','C4','S5','C5','Class')
+train_data <- read.table('poker-hand-training-true.data', sep = ",", col.names=train_cols)
+test_data <- read.table('poker-hand-testing.data', sep = ",", col.names=train_cols)
+X_train <- train_data[,1:10]
+Y_train <- train_data[,11]
+X_test <- test_data[1:25000,1:10]
+k = 11
+X_test <- test_data[(k*25000+1):((k+1)*25000),1:10]
+Y_test <- test_data[(k*25000+1):((k+1)*25000),11]
+```
+
+```{r EDA}
+plot(c(1:length(Y_test)),Y_test,type='p',col='red',main='Test dataset',xlab='Test data points',ylab='classes')
+plot(c(1:length(Y_train)),Y_train,type='p',col='red',main='Train dataset',xlab='Train data points',ylab='classes')
+```
+
+### Feature Engineering
+```{r Feature Engineering}
+
+c_sort <- function(X){
+  for (i in c(1:dim(X)[1])){
+    X_temp = X[i,]
+    c_rank = rank(c(X[i,]$C1,X[i,]$C2,X[i,]$C3,X[i,]$C4,X[i,]$C5),ties.method = 'first')
+    k = 1
+    for (j in c_rank){
+      X[i,2*j - 1] = X_temp[2*k - 1]
+      X[i,2*j] = X_temp[2*k]
+      k = k+1
+    }
+  }
+  X
+}
+
+s_sort <- function(X){
+  for (i in c(1:dim(X)[1])){
+    X_temp = X[i,]
+    s_rank = rank(c(X[i,]$S1,X[i,]$S2,X[i,]$S3,X[i,]$S4,X[i,]$S5),ties.method = 'first')
+    k = 1
+    for (j in s_rank){
+      X[i,2*j - 1] = X_temp[2*k - 1]
+      X[i,2*j] = X_temp[2*k]
+      k = k+1
+    }
+  }
+  X
+}
+
+max_c_and_s <- function(X){
+  max_s = data.frame(n_suite=NA)
+  max_c = data.frame(n_class=NA)
+  for (i in c(1:dim(X)[1])){
+    max_s[i,1] <- max(tabulate(c(X[i,]$S1,X[i,]$S2,X[i,]$S3,X[i,]$S4,X[i,]$S5), nbins = 4))
+    max_c[i,1] <- max(tabulate(c(X[i,]$C1,X[i,]$C2,X[i,]$C3,X[i,]$C4,X[i,]$C5), nbins = 13))
+  }
+  res1 <- cbind(X,max_s)
+  res <- cbind(res1,max_c)
+  res
+}
+```
+
+#### Sort by suite
+```{r}
+s_X_train <- s_sort(X_train)
+s_X_test <- s_sort(X_test)
+```
+
+#### Sort by class
+```{r}
+
+c_X_train <- c_sort(X_train)
+c_X_test <- c_sort(X_test)
+```
+
+#### Add columns maximum number of Classes and maximum number of Suites
+```{r}
+f_s_X_train <- max_c_and_s(s_X_train)
+f_s_X_test <- max_c_and_s(s_X_test)
+f_c_X_train <- max_c_and_s(c_X_train)
+f_c_X_test <- max_c_and_s(c_X_test)
+
+```
+
+```{r barplot}
+bar_plot <-function(y_act,y_pred,title){
+  leg=c('Actual','Predicted')
+  plot_table=t(data.frame(tabulate(y_act+1),tabulate(y_pred+1,nbins=10)))
+  colnames(plot_table) <- c(0:9)
+  barplot(data.matrix(plot_table),main=title,xlab='Rank',ylab='count',col = c('blue','red'),legend=leg,beside=TRUE)
+}
+
+```
+
+### Linear Regression
+```{r linear regression analyse}
+lin_regression<-function(X_train,X_test,Y_train,Y_test,title){
+lm1 <- lm(Y_train~.,data=cbind(X_train,Y_train))
+pred_class_train <- round(predict(lm1,newdata = X_train))
+pred_class_test <- round(predict(lm1,newdata = X_test))
+table(Y_train,pred_class_train)
+table(Y_test,pred_class_test)
+lr_train_error = ce(Y_train,pred_class_train)
+lr_test_error = ce(Y_test,pred_class_test)
+#plot(c(1:length(Y_test)),Y_test,type='p',col='red')
+#lines(c(1:length(pred_class_test)),pred_class_test,type='p',col='green')
+bar_plot(Y_test,pred_class_test, title)
+c(lr_train_error,lr_test_error)
+}
+```
+
+### Tree 
+```{r tree}
+library(tree)
+tree_reg<-function(X_train,X_test,Y_train,Y_test,title){
+tree1 <- tree(Y_train~.,data=cbind(X_train,Y_train))
+tree_pred_train <- round(predict(tree1,X_train))
+tree_pred_test <- round(predict(tree1,X_test))
+table(Y_train,tree_pred_train)
+table(Y_test,tree_pred_test)
+tree_train_error = ce(Y_train,tree_pred_train)
+tree_test_error = ce(Y_test,tree_pred_test)
+#plot(c(1:length(Y_test)),Y_test,type='p',col='red')
+#lines(c(1:length(tree_pred_test)),tree_pred_test,type='p',col='green')
+bar_plot(Y_test,tree_pred_test, title)
+c(tree_train_error,tree_test_error)
+}
+```
+
+### Random Forest
+```{r random forest analysis}
+library(randomForest)
+randForest<-function(X_train,X_test,Y_train,Y_test,title){
+rf1 <- randomForest(x=X_train,y=Y_train,xtest=X_test,ytest=Y_test,importance= TRUE)
+rf_pred_train <- round(rf1$predicted)
+rf_pred_test <- round(rf1$test$predicted)
+pred_train_tab <- table(Y_train,rf_pred_train)
+pred_test_tab <- table(Y_test,rf_pred_test)
+rf_train_error = ce(Y_train,rf_pred_train)
+rf_test_error = ce(Y_test,rf_pred_test)
+bar_plot(Y_test,rf_pred_test, title)
+barplot(rf1$importance[,1],ylim=c(0:1),main=title,las=2)
+c(rf_train_error,rf_test_error)
+#plot(c(1:length(Y_test)),Y_test,type='p',col='red')
+#lines(c(1:length(rf_pred_test)),rf_pred_test,type='p',col='green')
+}
+```
+
+### SVM
+```{r SVM analysis}
+library(e1071)
+
+svm_cl<-function(X_train,X_test,Y_train,Y_test,title){
+svm1 <- svm(Y_train~.,data=cbind(f_c_X_train,Y_train))
+svm_pred_train <- round(predict(svm1,f_c_X_train))
+svm_pred_test <- round(predict(svm1,f_c_X_test))
+table(Y_train,svm_pred_train)
+table(Y_test,svm_pred_test)
+svm_train_error = ce(Y_train,svm_pred_train)
+svm_test_error = ce(Y_test,svm_pred_test)
+bar_plot(Y_test,svm_pred_test, title)
+c(svm_train_error,svm_test_error)
+#plot(c(1:length(Y_test)),Y_test,type='p',col='red')
+#lines(c(1:length(svm_pred_test)),svm_pred_test,type='p',col='green')
+}
+```
+
+
+```{r}
+```
+
+## Without sorting
+
+### Linear Regression
+```{r}
+lr_error_o=lin_regression(X_train,X_test,Y_train,Y_test,'Linear Regression-without sorting')
+```
+
+### Decision Trees
+```{r}
+tree_error_o=tree_reg(X_train,X_test,Y_train,Y_test,'Decision Trees-without sorting')
+```
+
+### Random Forest
+```{r}
+rf_error_o=randForest(X_train,X_test,Y_train,Y_test,'Random Forest-without sorting')
+```
+
+### SVM
+```{r}
+svm_error_o=svm_cl(X_train,X_test,Y_train,Y_test,'SVM-without sorting')
+
+```
+
+
+## Sorted by classes
+
+### Linear Regression
+```{r}
+lr_error_c=lin_regression(f_c_X_train,f_c_X_test,Y_train,Y_test,'Linear Regression-Sorted by classes')
+```
+
+### Decision Trees
+```{r}
+tree_error_c=tree_reg(f_c_X_train,f_c_X_test,Y_train,Y_test,'Decision Trees-Sorted by classes')
+```
+
+### Random Forest
+```{r}
+rf_error_c=randForest(f_c_X_train,f_c_X_test,Y_train,Y_test,'Random Forest-Sorted by classes')
+```
+
+### SVM
+```{r}
+svm_error_c=svm_cl(f_c_X_train,f_c_X_test,Y_train,Y_test,'SVM-Sorted by classes')
+
+```
+
+## Sorted by suites
+
+### Linear Regression
+```{r}
+lr_error_s=lin_regression(f_s_X_train,f_s_X_test,Y_train,Y_test,'Linear Regression-Sorted by suites')
+```
+
+### Decision Trees
+```{r}
+tree_error_s=tree_reg(f_s_X_train,f_s_X_test,Y_train,Y_test,'Decision Trees-Sorted by suites')
+```
+
+### Random Forest
+```{r}
+rf_error_s=randForest(f_s_X_train,f_s_X_test,Y_train,Y_test,'Random Forest-Sorted by suites')
+```
+
+### SVM
+```{r}
+svm_error_s=svm_cl(f_s_X_train,f_s_X_test,Y_train,Y_test,'SVM-Sorted by suites')
+
+```
+```{r}
+lr_acc_o=((1-lr_error_o)*100)
+tree_acc_o=((1-tree_error_o)*100)
+rf_acc_o=((1-rf_error_o)*100)
+svm_acc_o=((1-svm_error_o)*100)
+
+```
+
+```{r}
+print('Without sorting')
+print(lr_acc_o)
+print(tree_acc_o)
+print(rf_acc_o)
+print(svm_acc_o)
+```
+```{r}
+print('Sort by class')
+print((1-lr_error_c)*100)
+print((1-tree_error_c)*100)
+print((1-rf_error_c)*100)
+print((1-svm_error_c)*100)
+
+```
+
+```{r}
+print('Sort by suite')
+print((1-lr_error_s)*100)
+print((1-tree_error_s)*100)
+print((1-rf_error_s)*100)
+print((1-svm_error_s)*100)
+
+```
+
