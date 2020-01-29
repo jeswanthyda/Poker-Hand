@@ -2,9 +2,9 @@
 Rule Induction implementation for Poker
 
 ### Contributors
--Jeswanth Yadagani
--Prutha Parmar
--Kavita Anant
+- Jeswanth Yadagani
+- Prutha Parmar
+- Kavita Anant
 
 ### Significant Work
 Dealing with positional component of a record and training the model to detect poker hand for an unseen record.
